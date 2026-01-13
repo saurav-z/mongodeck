@@ -172,6 +172,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ dbName, onNavigateCollectio
         </div>
       )}
     </div>
+    </div>
   );
 };
 
