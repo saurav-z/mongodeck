@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getCollections, createCollection, dropDatabase } from '../services/api';
+import { getCollections, createCollection, dropDatabase, bulkCollectionsAction } from '../services/api';
 import { Icons } from '../components/Icon';
 
 interface DatabaseViewProps {
@@ -10,6 +10,7 @@ interface DatabaseViewProps {
 
 const DatabaseView: React.FC<DatabaseViewProps> = ({ dbName, onNavigateCollection, onBack }) => {
   const [collections, setCollections] = useState<any[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newColName, setNewColName] = useState('');
@@ -18,6 +19,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ dbName, onNavigateCollectio
     setLoading(true);
     getCollections(dbName).then(cols => {
       setCollections(cols);
+      setSelected([]);
       setLoading(false);
     }).catch(console.error);
   };
@@ -59,7 +61,41 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ dbName, onNavigateCollectio
           </h1>
           <p className="text-slate-400 mt-1">{collections.length} Collections</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          {collections.length > 0 && (
+            <div className="flex items-center gap-2 mr-4">
+              <input
+                type="checkbox"
+                checked={selected.length === collections.length}
+                onChange={(e) => {
+                  if (e.target.checked) setSelected(collections.map(c => c.name));
+                  else setSelected([]);
+                }}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-slate-400">Select all</span>
+            </div>
+          )}
+          {selected.length > 0 && (
+            <div className="flex items-center gap-2 mr-4">
+              <span className="text-sm text-slate-300">{selected.length} selected</span>
+              <button onClick={async () => {
+                  if (!confirm(`Truncate ${selected.length} selected collections? This will delete all documents.`)) return;
+                  try {
+                    await bulkCollectionsAction(dbName, 'truncate', selected);
+                    fetchCols();
+                  } catch (e) { console.error(e); alert(e.message || e); }
+              }} className="px-3 py-1 rounded bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 text-sm">Truncate Selected</button>
+              <button onClick={async () => {
+                  if (!confirm(`Drop ${selected.length} selected collections? This cannot be undone.`)) return;
+                  try {
+                    await bulkCollectionsAction(dbName, 'drop', selected);
+                    fetchCols();
+                  } catch (e) { console.error(e); alert(e.message || e); }
+              }} className="px-3 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-sm">Drop Selected</button>
+            </div>
+          )}
+          <div className="flex gap-3">
            <button 
              onClick={handleDropDb}
              className="px-4 py-2 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors text-sm font-medium flex items-center gap-2"
@@ -76,12 +112,24 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ dbName, onNavigateCollectio
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {collections.map(col => (
+        {collections.map(col => {
+          const isSelected = selected.includes(col.name);
+          return (
           <div 
             key={col.name}
             onClick={() => onNavigateCollection(dbName, col.name)}
-            className="bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 hover:border-emerald-500/50 p-6 rounded-xl cursor-pointer transition-all group"
+            className={`relative bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 hover:border-emerald-500/50 p-6 rounded-xl cursor-pointer transition-all group ${isSelected ? 'ring-2 ring-emerald-500/30' : ''}`}
           >
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                if (e.target.checked) setSelected(s => [...s, col.name]);
+                else setSelected(s => s.filter(x => x !== col.name));
+              }}
+              className="absolute left-4 top-4 w-4 h-4 z-20"
+            />
             <div className="flex justify-between items-start mb-4">
               <div className="p-2 bg-slate-700/50 rounded-lg group-hover:bg-emerald-500/20 group-hover:text-emerald-400 text-slate-400 transition-colors">
                  <Icons.Table className="w-6 h-6" />
@@ -100,7 +148,8 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ dbName, onNavigateCollectio
                 </span>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
        {showCreateModal && (

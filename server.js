@@ -226,6 +226,66 @@ app.delete('/api/document/:dbName/:colName/:id', withMongo, async (req, res) => 
     }
 });
 
+// Drop a collection
+app.delete('/api/collection/:dbName/:colName', withMongo, async (req, res) => {
+    try {
+        const { dbName, colName } = req.params;
+        const db = req.dbClient.db(dbName);
+        const exists = await db.listCollections({ name: colName }).hasNext();
+        if (!exists) return res.status(404).json({ error: 'Collection not found' });
+        await db.collection(colName).drop();
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Truncate (delete all documents) in a collection
+app.post('/api/collection/:dbName/:colName/truncate', withMongo, async (req, res) => {
+    try {
+        const { dbName, colName } = req.params;
+        const db = req.dbClient.db(dbName);
+        const col = db.collection(colName);
+        await col.deleteMany({});
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Bulk action on collections: { action: 'drop'|'truncate', collections: string[] }
+app.post('/api/collections/:dbName/bulk', withMongo, async (req, res) => {
+    try {
+        const { dbName } = req.params;
+        const { action, collections } = req.body;
+        if (!Array.isArray(collections) || !action) return res.status(400).json({ error: 'Invalid payload' });
+
+        const db = req.dbClient.db(dbName);
+        const results = [];
+
+        for (const colName of collections) {
+            try {
+                if (action === 'drop') {
+                    const exists = await db.listCollections({ name: colName }).hasNext();
+                    if (exists) await db.collection(colName).drop();
+                    results.push({ collection: colName, status: 'dropped' });
+                } else if (action === 'truncate') {
+                    await db.collection(colName).deleteMany({});
+                    results.push({ collection: colName, status: 'truncated' });
+                } else {
+                    results.push({ collection: colName, status: 'unknown action' });
+                }
+            } catch (e) {
+                results.push({ collection: colName, error: e.message });
+            }
+        }
+
+        res.json({ results });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- Static Serving (Production) ---
 app.use(express.static(path.join(__dirname, 'dist')));
 

@@ -81,6 +81,32 @@ export const dropDatabase = async (dbName: string): Promise<void> => {
     if (!res.ok) throw new Error(await res.text());
 };
 
+export const dropCollection = async (dbName: string, colName: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/collection/${dbName}/${colName}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+    });
+    if (!res.ok) throw new Error(await res.text());
+};
+
+export const truncateCollection = async (dbName: string, colName: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/collection/${dbName}/${colName}/truncate`, {
+        method: 'POST',
+        headers: getHeaders()
+    });
+    if (!res.ok) throw new Error(await res.text());
+};
+
+export const bulkCollectionsAction = async (dbName: string, action: 'drop' | 'truncate', collections: string[]): Promise<any> => {
+    const res = await fetch(`${API_URL}/collections/${dbName}/bulk`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ action, collections })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+};
+
 export const getDocuments = async (
     dbName: string, 
     colName: string, 
