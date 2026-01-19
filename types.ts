@@ -43,3 +43,36 @@ export interface ServerStatus {
   connections: number;
   memoryUsage: number;
 }
+
+export interface SavedConnection {
+  name: string;
+  config: ConnectionConfig;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EncryptionKey {
+  key: string;
+  iv: string;
+}
+
+export interface CommandResult {
+  success: boolean;
+  data?: any;
+  error?: string;
+  executionTime?: number;
+}
+
+export interface DbExportConfig {
+  dbName: string;
+  collections?: string[];
+  includeIndexes?: boolean;
+  format: 'json' | 'bson';
+}
+
+export interface CollectionExportConfig {
+  dbName: string;
+  colName: string;
+  filter?: any;
+  format: 'json' | 'csv';
+}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getDocuments, insertDocument, updateDocument, deleteDocument } from '../services/api';
+import { getDocuments, insertDocument, updateDocument, deleteDocument, exportCollection } from '../services/api';
 import { Icons } from '../components/Icon';
 import JsonEditor from '../components/JsonEditor';
 import { ViewMode, Document } from '../types';
@@ -31,6 +31,7 @@ const CollectionView: React.FC<CollectionViewProps> = ({ dbName, colName, onBack
   const [showDocModal, setShowDocModal] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [editorContent, setEditorContent] = useState<any>(null);
+    const [exporting, setExporting] = useState(false);
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -99,6 +100,26 @@ const CollectionView: React.FC<CollectionViewProps> = ({ dbName, colName, onBack
       setShowDocModal(true);
   };
 
+    const handleExportCollection = async () => {
+        setExporting(true);
+        try {
+            const blob = await exportCollection({ dbName, colName, format: 'json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${dbName}_${colName}_${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Export failed:', error);
+            alert('Export failed: ' + (error as Error).message);
+        } finally {
+            setExporting(false);
+        }
+    };
+
   const totalPages = Math.ceil(totalDocs / limit);
 
   return (
@@ -118,25 +139,44 @@ const CollectionView: React.FC<CollectionViewProps> = ({ dbName, colName, onBack
                 <span className="text-xs md:text-sm font-normal text-slate-500 ml-2 bg-slate-800 px-2 py-0.5 rounded-full whitespace-nowrap">{totalDocs} docs</span>
             </h1>
             
-            <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700 self-end md:self-auto">
-                <button 
-                    onClick={() => setViewMode(ViewMode.JSON)}
-                    className={`p-2 rounded-md transition-colors ${viewMode === ViewMode.JSON ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'}`}
-                >
-                    <Icons.Code className="w-4 h-4" />
-                </button>
-                <button 
-                    onClick={() => setViewMode(ViewMode.TABLE)}
-                    className={`p-2 rounded-md transition-colors ${viewMode === ViewMode.TABLE ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'}`}
-                >
-                    <Icons.List className="w-4 h-4" />
-                </button>
-                <button 
-                    onClick={() => setViewMode(ViewMode.CARD)}
-                    className={`p-2 rounded-md transition-colors ${viewMode === ViewMode.CARD ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'}`}
-                >
-                    <Icons.Grid className="w-4 h-4" />
-                </button>
+                  <div className="flex items-center gap-2">
+                      <button
+                          onClick={handleExportCollection}
+                          disabled={exporting}
+                          className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+                      >
+                          {exporting ? (
+                              <>
+                                  <Icons.Refresh className="w-4 h-4 animate-spin" />
+                                  Exporting...
+                              </>
+                          ) : (
+                              <>
+                                  <Icons.Download className="w-4 h-4" />
+                                  Export
+                              </>
+                          )}
+                      </button>
+                      <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
+                          <button
+                              onClick={() => setViewMode(ViewMode.JSON)}
+                              className={`p-2 rounded-md transition-colors ${viewMode === ViewMode.JSON ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'}`}
+                          >
+                              <Icons.Code className="w-4 h-4" />
+                          </button>
+                          <button
+                              onClick={() => setViewMode(ViewMode.TABLE)}
+                              className={`p-2 rounded-md transition-colors ${viewMode === ViewMode.TABLE ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'}`}
+                          >
+                              <Icons.List className="w-4 h-4" />
+                          </button>
+                          <button
+                              onClick={() => setViewMode(ViewMode.CARD)}
+                              className={`p-2 rounded-md transition-colors ${viewMode === ViewMode.CARD ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'}`}
+                          >
+                              <Icons.Grid className="w-4 h-4" />
+                          </button>
+                      </div>
             </div>
         </div>
 

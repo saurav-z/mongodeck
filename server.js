@@ -3,12 +3,15 @@ import { MongoClient, ObjectId } from 'mongodb';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = 3001;
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
@@ -281,6 +284,173 @@ app.post('/api/collections/:dbName/bulk', withMongo, async (req, res) => {
         }
 
         res.json({ results });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Execute MongoDB command
+app.post('/api/command', withMongo, async (req, res) => {
+    try {
+        const { command } = req.body;
+        if (!command) return res.status(400).json({ error: 'Command is required' });
+
+        const startTime = Date.now();
+
+        // Parse and execute the command
+        // This is a simplified implementation - in production, you'd want to validate/sanitize commands
+        const db = req.dbClient.db();
+
+        // Try to evaluate the command as JavaScript
+        let result;
+        try {
+            result = await db.eval(command);
+        } catch (e) {
+            // If eval fails, try parsing as a command object
+            try {
+                const cmdObj = JSON.parse(command);
+                result = await db.command(cmdObj);
+            } catch (parseError) {
+                throw new Error(`Invalid command format: ${e.message}`);
+            }
+        }
+
+        const executionTime = Date.now() - startTime;
+
+        res.json({
+            success: true,
+            data: result,
+            executionTime
+        });
+    } catch (e) {
+        res.status(500).json({
+            success: false,
+            error: e.message
+        });
+    }
+});
+
+// Export database as JSON
+app.post('/api/export/database', withMongo, async (req, res) => {
+    try {
+        const { dbName, format = 'json' } = req.body;
+        if (!dbName) return res.status(400).json({ error: 'Database name is required' });
+
+        const db = req.dbClient.db(dbName);
+        const collections = await db.listCollections().toArray();
+
+        const exportData = {
+            database: dbName,
+            exportedAt: new Date().toISOString(),
+            collections: []
+        };
+
+        for (const colInfo of collections) {
+            const col = db.collection(colInfo.name);
+            const docs = await col.find({}).toArray();
+            exportData.collections.push({
+                name: colInfo.name,
+                documents: docs
+            });
+        }
+
+        if (format === 'json') {
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Content-Disposition', `attachment; filename="${dbName}_${Date.now()}.json"`);
+            res.send(JSON.stringify(exportData, null, 2));
+        } else {
+            res.status(400).json({ error: 'Unsupported format. Use "json"' });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Export collection
+app.post('/api/export/collection', withMongo, async (req, res) => {
+    try {
+        const { dbName, colName, format = 'json', filter = {} } = req.body;
+        if (!dbName || !colName) return res.status(400).json({ error: 'Database and collection names are required' });
+
+        const db = req.dbClient.db(dbName);
+        const col = db.collection(colName);
+
+        const docs = await col.find(filter).toArray();
+
+        if (format === 'json') {
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Content-Disposition', `attachment; filename="${dbName}_${colName}_${Date.now()}.json"`);
+            res.send(JSON.stringify(docs, null, 2));
+        } else if (format === 'csv') {
+            // Convert to CSV
+            if (docs.length === 0) {
+                res.setHeader('Content-Type', 'text/csv');
+                res.send('');
+                return;
+            }
+
+            const headers = Object.keys(docs[0]);
+            const csvRows = [headers.join(',')];
+
+            for (const doc of docs) {
+                const row = headers.map(header => {
+                    const value = doc[header];
+                    if (value === null || value === undefined) return '';
+                    if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+                    return `"${String(value).replace(/"/g, '""')}"`;
+                });
+                csvRows.push(row.join(','));
+            }
+
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="${dbName}_${colName}_${Date.now()}.csv"`);
+            res.send(csvRows.join('\n'));
+        } else {
+            res.status(400).json({ error: 'Unsupported format. Use "json" or "csv"' });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Import collection from file
+app.post('/api/import/collection/:dbName/:colName', upload.single('file'), withMongo, async (req, res) => {
+    try {
+        const { dbName, colName } = req.params;
+
+        // Get the file from the request
+        if (!req.file && !req.body.data) {
+            return res.status(400).json({ error: 'No file or data provided' });
+        }
+
+        const db = req.dbClient.db(dbName);
+        const col = db.collection(colName);
+
+        let data;
+        if (req.file) {
+            // Handle multipart form data
+            const fileContent = req.file.buffer.toString('utf-8');
+            data = JSON.parse(fileContent);
+        } else {
+            // Handle JSON body
+            data = req.body.data;
+        }
+
+        // Validate data format
+        if (!Array.isArray(data)) {
+            return res.status(400).json({ error: 'Data must be an array of documents' });
+        }
+
+        // Insert documents
+        if (data.length > 0) {
+            const result = await col.insertMany(data);
+            res.json({
+                success: true,
+                insertedCount: result.insertedCount
+            });
+        } else {
+            res.json({ success: true, insertedCount: 0 });
+        }
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

@@ -1,4 +1,3 @@
-import React from 'react';
 import { 
   Database, 
   Server, 
@@ -21,7 +20,11 @@ import {
   Grid,
   Sparkles,
   RefreshCw,
-  X
+  X,
+  Upload,
+  Download,
+  Link,
+  ChevronDown
 } from 'lucide-react';
 
 export const Icons = {
@@ -46,5 +49,9 @@ export const Icons = {
   Grid,
   Sparkles,
   Refresh: RefreshCw,
-  Close: X
+  Close: X,
+  Download,
+  Upload,
+  Link,
+  ChevronDown
 };

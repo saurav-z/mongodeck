@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import DatabaseView from './pages/DatabaseView';
 import CollectionView from './pages/CollectionView';
+import CommandPanel from './components/CommandPanel';
 import { getDatabases } from './services/api';
 import { ConnectionConfig } from './types';
 import { Icons } from './components/Icon';
@@ -17,6 +18,9 @@ function App() {
   // Mobile Sidebar State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Command Panel State
+  const [showCommandPanel, setShowCommandPanel] = useState(false);
+
   useEffect(() => {
     if (isConnected) {
       // Poll for DB list updates
@@ -26,6 +30,21 @@ function App() {
       getDatabases().then(setDatabases).catch(console.error);
       return () => clearInterval(interval);
     }
+  }, [isConnected]);
+
+  // Keyboard shortcut for command panel
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        if (isConnected) {
+          setShowCommandPanel(prev => !prev);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isConnected]);
 
   const handleConnect = (config: ConnectionConfig) => {
@@ -79,6 +98,19 @@ function App() {
              <span className="font-bold text-lg text-slate-100">MongoDeck</span>
         </div>
 
+        {/* Command Button */}
+        {isConnected && (
+          <div className="absolute bottom-6 right-6 z-30">
+            <button
+              onClick={() => setShowCommandPanel(true)}
+              className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold p-4 rounded-full shadow-lg shadow-emerald-500/30 transition-all hover:scale-105"
+              title="Open Command Panel (Ctrl+K)"
+            >
+              <Icons.Terminal className="w-6 h-6" />
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 overflow-auto">
           {!currentDb && (
             <Dashboard onNavigateDb={navigateToDb} />
@@ -101,6 +133,11 @@ function App() {
           )}
         </div>
       </main>
+
+      <CommandPanel
+        isOpen={showCommandPanel}
+        onClose={() => setShowCommandPanel(false)}
+      />
     </div>
   );
 }

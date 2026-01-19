@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { getServerStatus, getDatabases } from '../services/api';
-import { ServerStatus, Database } from '../types';
+import React, { useEffect, useState, useRef } from 'react';
+import { getServerStatus, getDatabases, exportDatabase, exportCollection, importCollection } from '../services/api';
+import { ServerStatus, Database, DbExportConfig, CollectionExportConfig } from '../types';
 import { Icons } from '../components/Icon';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -12,6 +12,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateDb }) => {
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [dbs, setDbs] = useState<Database[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [selectedDb, setSelectedDb] = useState<string>('');
+  const [selectedCol, setSelectedCol] = useState<string>('');
+  const [exportFormat, setExportFormat] = useState<'json' | 'csv' | 'bson'>('json');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     Promise.all([getServerStatus(), getDatabases()])
@@ -25,6 +31,68 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateDb }) => {
         setLoading(false);
       });
   }, []);
+
+  const handleExportDb = async (dbName: string) => {
+    setExporting(true);
+    try {
+      const blob = await exportDatabase({ dbName, format: exportFormat });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${dbName}_${Date.now()}.${exportFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + (error as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportCollection = async (dbName: string, colName: string) => {
+    setExporting(true);
+    try {
+      const blob = await exportCollection({ dbName, colName, format: exportFormat as 'json' | 'csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${dbName}_${colName}_${Date.now()}.${exportFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + (error as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportCollection = async (dbName: string, colName: string, file: File) => {
+    setExporting(true);
+    try {
+      await importCollection(dbName, colName, file);
+      alert('Import successful!');
+      // Refresh databases
+      const updatedDbs = await getDatabases();
+      setDbs(updatedDbs);
+    } catch (error) {
+      console.error('Import failed:', error);
+      alert('Import failed: ' + (error as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const openExportModal = (dbName: string, colName?: string) => {
+    setSelectedDb(dbName);
+    setSelectedCol(colName || '');
+    setShowExportModal(true);
+  };
 
   if (loading) return <div className="p-8 text-slate-400 animate-pulse">Loading server status...</div>;
 
@@ -98,9 +166,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateDb }) => {
         <div className="lg:col-span-2 bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
           <div className="p-6 border-b border-slate-700 flex justify-between items-center">
             <h2 className="text-lg font-semibold text-slate-100">Databases</h2>
-            <button className="text-emerald-400 text-sm font-medium hover:text-emerald-300 flex items-center gap-1">
-              <Icons.Plus className="w-4 h-4" /> New Database
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={exporting}
+                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+              >
+                <Icons.Upload className="w-4 h-4" />
+                Import
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,.bson"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    // For simplicity, import to first database
+                    if (dbs.length > 0) {
+                      await handleImportCollection(dbs[0].name, 'imported', file);
+                    }
+                    e.target.value = '';
+                  }
+                }}
+                style={{ display: 'none' }}
+              />
+            </div>
           </div>
           <div className="divide-y divide-slate-700">
             {dbs.map(db => (
@@ -116,7 +207,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateDb }) => {
                     <p className="text-xs text-slate-500">{db.collections.length} collections</p>
                   </div>
                 </div>
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openExportModal(db.name);
+                    }}
+                    className="p-1.5 bg-blue-500/10 text-blue-400 rounded hover:bg-blue-500/20 transition-colors"
+                    title="Export database"
+                  >
+                    <Icons.Download className="w-4 h-4" />
+                  </button>
                   <Icons.ChevronRight className="w-5 h-5 text-slate-600" />
                 </div>
               </div>
@@ -156,6 +257,70 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateDb }) => {
           </div>
         </div>
       </div>
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 w-full max-w-md rounded-xl border border-slate-700 shadow-2xl">
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-100">Export {selectedCol ? 'Collection' : 'Database'}</h3>
+              <button onClick={() => setShowExportModal(false)}><Icons.Close className="text-slate-400 hover:text-white" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm text-slate-400 mb-2">
+                  {selectedCol
+                    ? `Exporting collection "${selectedCol}" from database "${selectedDb}"`
+                    : `Exporting database "${selectedDb}"`
+                  }
+                </p>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Format</label>
+                <select
+                  value={exportFormat}
+                  onChange={e => setExportFormat(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                >
+                  <option value="json">JSON</option>
+                  {!selectedCol && <option value="bson">BSON</option>}
+                  {selectedCol && <option value="csv">CSV</option>}
+                </select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="flex-1 px-4 py-2 text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (selectedCol) {
+                      await handleExportCollection(selectedDb, selectedCol);
+                    } else {
+                      await handleExportDb(selectedDb);
+                    }
+                    setShowExportModal(false);
+                  }}
+                  disabled={exporting}
+                  className="flex-1 px-4 py-2 bg-emerald-500 text-slate-900 font-bold rounded-lg hover:bg-emerald-400 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  {exporting ? (
+                    <>
+                      <Icons.Refresh className="w-4 h-4 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Icons.Download className="w-4 h-4" />
+                      Export
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

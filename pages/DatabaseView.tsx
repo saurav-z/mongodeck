@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   getCollections,
   createCollection,
   dropDatabase,
-  bulkCollectionsAction
+  bulkCollectionsAction,
+  exportCollection
 } from '../services/api';
 import { Icons } from '../components/Icon';
 
@@ -23,6 +24,8 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newColName, setNewColName] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const allSelected = selected.length === collections.length && collections.length > 0;
   const partiallySelected = selected.length > 0 && !allSelected;
@@ -62,6 +65,26 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({
     if (!confirm(`Drop database "${dbName}"? This cannot be undone.`)) return;
     await dropDatabase(dbName);
     onBack();
+  };
+
+  const handleExportCollection = async (colName: string) => {
+    setExporting(true);
+    try {
+      const blob = await exportCollection({ dbName, colName, format: 'json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${dbName}_${colName}_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + (error as Error).message);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) {
@@ -193,6 +216,17 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <div className="p-2 bg-slate-700/50 rounded-lg text-slate-400">
                     <Icons.Table className="w-6 h-6" />
                   </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExportCollection(col.name);
+                    }}
+                    disabled={exporting}
+                    className="p-1.5 bg-blue-500/10 text-blue-400 rounded hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+                    title="Export collection"
+                  >
+                    <Icons.Download className="w-4 h-4" />
+                  </button>
                 </div>
 
                 <h3 className="text-lg font-bold text-slate-200 mb-1">

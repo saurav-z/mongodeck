@@ -1,4 +1,4 @@
-import { Database, Document, ServerStatus, QueryOptions, ConnectionConfig } from '../types';
+import { Database, Document, ServerStatus, QueryOptions, ConnectionConfig, CommandResult, DbExportConfig, CollectionExportConfig } from '../types';
 
 const API_URL = '/api';
 
@@ -144,6 +144,48 @@ export const deleteDocument = async (dbName: string, colName: string, id: string
     const res = await fetch(`${API_URL}/document/${dbName}/${colName}/${id}`, {
         method: 'DELETE',
         headers: getHeaders()
+    });
+    if (!res.ok) throw new Error(await res.text());
+};
+
+export const executeCommand = async (command: string): Promise<CommandResult> => {
+    const res = await fetch(`${API_URL}/command`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ command })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+};
+
+export const exportDatabase = async (config: DbExportConfig): Promise<Blob> => {
+    const res = await fetch(`${API_URL}/export/database`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(config)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.blob();
+};
+
+export const exportCollection = async (config: CollectionExportConfig): Promise<Blob> => {
+    const res = await fetch(`${API_URL}/export/collection`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(config)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.blob();
+};
+
+export const importCollection = async (dbName: string, colName: string, file: File): Promise<void> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch(`${API_URL}/import/collection/${dbName}/${colName}`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: formData
     });
     if (!res.ok) throw new Error(await res.text());
 };

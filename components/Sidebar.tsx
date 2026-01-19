@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icons } from './Icon';
+import { SavedConnection } from '../types';
+import { loadEncryptedConnections } from '../services/encryption';
 
 interface SidebarProps {
   databases: any[];
@@ -12,6 +14,32 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ databases, currentDb, onSelectDb, onLogout, navigate, isOpen, onClose }) => {
+  const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
+  const [showSavedConnections, setShowSavedConnections] = useState(false);
+
+  useEffect(() => {
+    try {
+      const connections = loadEncryptedConnections();
+      setSavedConnections(connections);
+    } catch (error) {
+      console.error('Failed to load saved connections:', error);
+    }
+  }, []);
+
+  const handleConnectToSaved = (conn: SavedConnection) => {
+    // This would need to trigger a connection in the parent component
+    // For now, we'll just show the connection details
+    alert(`Connect to: ${conn.name}\n${conn.config.mode === 'uri' ? conn.config.uri : `${conn.config.host}:${conn.config.port}`}`);
+  };
+
+  const handleDeleteSaved = (name: string) => {
+    if (confirm(`Delete saved connection "${name}"?`)) {
+      // This would need to update the saved connections
+      // For now, we'll just show a message
+      alert(`Would delete: ${name}`);
+    }
+  };
+
   return (
     <>
       {/* Mobile Overlay */}
@@ -54,7 +82,6 @@ const Sidebar: React.FC<SidebarProps> = ({ databases, currentDb, onSelectDb, onL
 
           <div className="px-4 mt-6 mb-2 flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
             <span>Databases</span>
-            <button className="hover:text-emerald-400"><Icons.Plus className="w-3 h-3" /></button>
           </div>
           
           <div className="space-y-0.5">
@@ -76,6 +103,47 @@ const Sidebar: React.FC<SidebarProps> = ({ databases, currentDb, onSelectDb, onL
                 <div className="px-4 text-xs text-slate-600 italic">No accessible databases found.</div>
             )}
           </div>
+
+          {/* Saved Connections Section */}
+          {savedConnections.length > 0 && (
+            <>
+              <div className="px-4 mt-6 mb-2 flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                <span>Saved Connections</span>
+                <button
+                  onClick={() => setShowSavedConnections(!showSavedConnections)}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  <Icons.ChevronDown className={`w-3 h-3 transition-transform ${showSavedConnections ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+
+              {showSavedConnections && (
+                <div className="space-y-0.5">
+                  {savedConnections.map((conn) => (
+                    <div
+                      key={conn.name}
+                      className="group flex items-center justify-between px-4 py-2 hover:bg-slate-800/50 transition-colors"
+                    >
+                      <button
+                        onClick={() => { handleConnectToSaved(conn); onClose(); }}
+                        className="flex-1 text-left flex items-center gap-2 text-slate-400 hover:text-emerald-400 transition-colors"
+                      >
+                        <Icons.Link className="w-3 h-3" />
+                        <span className="truncate text-sm">{conn.name}</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSaved(conn.name)}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition-all"
+                        title="Delete"
+                      >
+                        <Icons.Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="p-4 border-t border-slate-800">
