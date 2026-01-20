@@ -16,6 +16,15 @@ interface ImportOptions {
   continueOnError: boolean;
 }
 
+interface ImportProgress {
+  current: number;
+  total: number;
+  message: string;
+  collection?: string;
+  batch?: number;
+  totalBatches?: number;
+}
+
 const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
   const [dbs, setDbs] = useState<Database[]>([]);
   const [selectedDb, setSelectedDb] = useState<string>('');
@@ -25,6 +34,7 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
+  const [importMode, setImportMode] = useState<'collection' | 'database' | 'mongodump'>('collection');
   const [importOptions, setImportOptions] = useState<ImportOptions>({
     targetDb: '',
     targetCol: '',
@@ -32,12 +42,13 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
     batchSize: 1000,
     continueOnError: false
   });
-  const [progress, setProgress] = useState<{ current: number; total: number; message: string } | null>(null);
+  const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [errorLog, setErrorLog] = useState<string[]>([]);
   const [successLog, setSuccessLog] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInfo, setFileInfo] = useState<{ name: string; size: string; type: string } | null>(null);
+  const [importTargetDb, setImportTargetDb] = useState<string>('');
 
   useEffect(() => {
     loadDatabases();
@@ -194,8 +205,13 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
       return;
     }
 
-    if (!importOptions.targetDb || !importOptions.targetCol) {
-      setErrorLog(['Please select a database and collection for import']);
+    if (!importTargetDb) {
+      setErrorLog(['Please select a target database']);
+      return;
+    }
+
+    if (importMode === 'collection' && !importOptions.targetCol) {
+      setErrorLog(['Please select a target collection']);
       return;
     }
 
@@ -203,11 +219,11 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
     clearLogs();
 
     try {
-      setProgress({ current: 10, total: 100, message: 'Reading file...' });
+      setProgress({ current: 10, total: 100, message: 'Reading file...', collection: '', batch: 0, totalBatches: 0 });
 
       // Read file content
       const text = await selectedFile.text();
-      let data: any[];
+      let data: any;
 
       try {
         data = JSON.parse(text);
@@ -215,68 +231,33 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
         throw new Error('Invalid JSON file format');
       }
 
-      if (!Array.isArray(data)) {
-        throw new Error('File must contain an array of documents');
-      }
-
-      setProgress({ current: 30, total: 100, message: `Processing ${data.length} documents...` });
-
       // Handle different import modes
-      let targetCol = importOptions.targetCol;
-
-      if (importOptions.importMode === 'same-name') {
-        // Use the collection name from the file if available
-        // For now, we'll use the targetCol as specified
-      } else if (importOptions.importMode === 'new-name') {
-        // Already using the specified targetCol
-      }
-
-      // For large files, we could implement chunking here
-      // For now, we'll import in batches
-      const batchSize = importOptions.batchSize;
-      let insertedCount = 0;
-      let errorCount = 0;
-
-      for (let i = 0; i < data.length; i += batchSize) {
-        const batch = data.slice(i, i + batchSize);
-        const progress = Math.min((i / data.length) * 100, 90);
-
-        setProgress({
-          current: progress,
-          total: 100,
-          message: `Importing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(data.length / batchSize)}...`
-        });
-
-        try {
-          // Import the batch
-          await importCollection(importOptions.targetDb, targetCol, batch);
-          insertedCount += batch.length;
-          setSuccessLog(prev => [...prev, `Imported batch ${Math.floor(i / batchSize) + 1}: ${batch.length} documents`]);
-        } catch (error) {
-          errorCount += batch.length;
-          setErrorLog(prev => [...prev, `Batch ${Math.floor(i / batchSize) + 1} failed: ${(error as Error).message}`]);
-
-          if (!importOptions.continueOnError) {
-            throw error;
-          }
+      if (importMode === 'database') {
+        // Import entire database (multiple collections)
+        if (typeof data !== 'object' || !data.database || !Array.isArray(data.collections)) {
+          throw new Error('Invalid database dump format. Expected { database: string, collections: [...] }');
         }
 
-        // Small delay between batches
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await importDatabase(data, importTargetDb);
+      } else if (importMode === 'mongodump') {
+        // Import mongodump format (multiple collections)
+        if (typeof data !== 'object') {
+          throw new Error('Invalid mongodump format');
+        }
+
+        await importMongodump(data, importTargetDb);
+      } else {
+      // Import single collection
+        if (!Array.isArray(data)) {
+          throw new Error('File must contain an array of documents');
+        }
+
+        await importSingleCollection(data, importTargetDb, importOptions.targetCol);
       }
 
-      setProgress({ current: 100, total: 100, message: 'Import completed!' });
-
-      if (errorCount > 0) {
-        setErrorLog(prev => [...prev, `Import completed with ${errorCount} errors`]);
-      }
-
-      setSuccessLog(prev => [...prev, `Successfully imported ${insertedCount} documents`]);
-
-      // Refresh collections if we imported to the currently selected database
-      if (importOptions.targetDb === selectedDb) {
-        loadCollections(selectedDb);
-      }
+      // Refresh databases list
+      const updatedDbs = await getDatabases();
+      setDbs(updatedDbs);
 
       // Clear file selection
       setSelectedFile(null);
@@ -291,6 +272,171 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
     } finally {
       setImporting(false);
     }
+  };
+
+  const importSingleCollection = async (data: any[], dbName: string, colName: string) => {
+    const batchSize = importOptions.batchSize;
+    let insertedCount = 0;
+    let errorCount = 0;
+    const totalBatches = Math.ceil(data.length / batchSize);
+
+    for (let i = 0; i < data.length; i += batchSize) {
+      const batch = data.slice(i, i + batchSize);
+      const progressPercent = Math.min((i / data.length) * 100, 90);
+
+      setProgress({ 
+        current: progressPercent,
+        total: 100, 
+        message: `Importing ${colName} - Batch ${Math.floor(i / batchSize) + 1}/${totalBatches}`,
+        collection: colName,
+        batch: Math.floor(i / batchSize) + 1,
+        totalBatches
+      });
+
+      try {
+        await importCollection(dbName, colName, batch);
+        insertedCount += batch.length;
+        setSuccessLog(prev => [...prev, `${colName}: Imported batch ${Math.floor(i / batchSize) + 1} (${batch.length} docs)`]);
+      } catch (error) {
+        errorCount += batch.length;
+        setErrorLog(prev => [...prev, `${colName}: Batch ${Math.floor(i / batchSize) + 1} failed: ${(error as Error).message}`]);
+
+        if (!importOptions.continueOnError) {
+          throw error;
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    setProgress({ current: 100, total: 100, message: `Imported ${colName} completed!`, collection: colName });
+
+    if (errorCount > 0) {
+      setErrorLog(prev => [...prev, `${colName}: Completed with ${errorCount} errors`]);
+    }
+
+    setSuccessLog(prev => [...prev, `${colName}: Successfully imported ${insertedCount} documents`]);
+  };
+
+  const importDatabase = async (data: any, targetDbName: string) => {
+    const collections = data.collections;
+    const totalCollections = collections.length;
+
+    setProgress({
+      current: 0,
+      total: 100,
+      message: `Importing database with ${totalCollections} collections...`,
+      collection: '',
+      batch: 0,
+      totalBatches: totalCollections
+    });
+
+    let totalInserted = 0;
+    let totalErrors = 0;
+
+    for (let colIndex = 0; colIndex < collections.length; colIndex++) {
+      const collectionData = collections[colIndex];
+      const colName = collectionData.name;
+      const documents = collectionData.documents || collectionData.docs || [];
+
+      setProgress({
+        current: (colIndex / totalCollections) * 100,
+        total: 100,
+        message: `Importing collection ${colIndex + 1}/${totalCollections}: ${colName}`,
+        collection: colName,
+        batch: colIndex + 1,
+        totalBatches: totalCollections
+      });
+
+      try {
+        await importSingleCollection(documents, targetDbName, colName);
+        totalInserted += documents.length;
+      } catch (error) {
+        totalErrors += documents.length;
+        if (!importOptions.continueOnError) {
+          throw error;
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    setProgress({ current: 100, total: 100, message: `Database import completed!`, collection: '', batch: totalCollections, totalBatches: totalCollections });
+
+    if (totalErrors > 0) {
+      setErrorLog(prev => [...prev, `Database import completed with ${totalErrors} errors`]);
+    }
+
+    setSuccessLog(prev => [...prev, `Database import: Successfully imported ${totalInserted} documents across ${totalCollections} collections`]);
+  };
+
+  const importMongodump = async (data: any, targetDbName: string) => {
+    // Mongodump format can vary, but typically it's an object with collection names as keys
+    const collections: { name: string; documents: any[] }[] = [];
+
+    for (const key in data) {
+      if (Array.isArray(data[key])) {
+        collections.push({ name: key, documents: data[key] });
+      } else if (typeof data[key] === 'object' && data[key] !== null) {
+        // Check if it has a documents array
+        if (Array.isArray(data[key].documents)) {
+          collections.push({ name: key, documents: data[key].documents });
+        }
+      }
+    }
+
+    if (collections.length === 0) {
+      throw new Error('No collections found in mongodump format');
+    }
+
+    const totalCollections = collections.length;
+
+    setProgress({
+      current: 0,
+      total: 100,
+      message: `Importing mongodump with ${totalCollections} collections...`,
+      collection: '',
+      batch: 0,
+      totalBatches: totalCollections
+    });
+
+    let totalInserted = 0;
+    let totalErrors = 0;
+
+    for (let colIndex = 0; colIndex < collections.length; colIndex++) {
+      const collectionData = collections[colIndex];
+      const colName = collectionData.name;
+      const documents = collectionData.documents;
+
+      setProgress({
+        current: (colIndex / totalCollections) * 100,
+        total: 100,
+        message: `Importing collection ${colIndex + 1}/${totalCollections}: ${colName}`,
+        collection: colName,
+        batch: colIndex + 1,
+        totalBatches: totalCollections
+      });
+
+      try {
+        await importSingleCollection(documents, targetDbName, colName);
+        totalInserted += documents.length;
+      } catch (error) {
+        totalErrors += documents.length;
+        if (!importOptions.continueOnError) {
+          throw error;
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    setProgress({ current: 100, total: 100, message: `Mongodump import completed!`, collection: '', batch: totalCollections, totalBatches: totalCollections });
+
+    if (totalErrors > 0) {
+      setErrorLog(prev => [...prev, `Mongodump import completed with ${totalErrors} errors`]);
+    }
+
+    setSuccessLog(prev => [...prev, `Mongodump import: Successfully imported ${totalInserted} documents across ${totalCollections} collections`]);
   };
 
   const allColsSelected = selectedCols.length === collections.length && collections.length > 0;
@@ -323,12 +469,14 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
             <span className="text-slate-300 font-medium">{progress.message}</span>
             <span className="text-emerald-400 font-bold">{Math.round(progress.current)}%</span>
           </div>
-          <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden">
-            <div
-              className="bg-emerald-500 h-full transition-all duration-300 ease-out"
-              style={{ width: `${progress.current}%` }}
-            />
-          </div>
+          {progress.collection && (
+            <div className="text-xs text-slate-500 mb-2">
+              Collection: <span className="text-slate-300">{progress.collection}</span>
+              {progress.batch && progress.totalBatches && (
+                <span className="ml-2">| Batch {progress.batch}/{progress.totalBatches}</span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -533,6 +681,49 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
       {/* Import Tab */}
       {activeTab === 'import' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          {/* Import Mode Selection */}
+          <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
+            <h2 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
+              <Upload className="w-5 h-5 text-emerald-400" />
+              Import Type
+            </h2>
+            <div className="grid gap-4 md:grid-cols-3">
+              <button
+                onClick={() => setImportMode('collection')}
+                className={`p-4 rounded-lg border-2 transition-all ${importMode === 'collection'
+                  ? 'border-emerald-500 bg-emerald-500/10'
+                  : 'border-slate-700 hover:border-slate-600'
+                  }`}
+              >
+                <Table className="w-6 h-6 mx-auto mb-2 text-emerald-400" />
+                <div className="font-bold text-slate-200">Single Collection</div>
+                <div className="text-xs text-slate-500 mt-1">Import one collection</div>
+              </button>
+              <button
+                onClick={() => setImportMode('database')}
+                className={`p-4 rounded-lg border-2 transition-all ${importMode === 'database'
+                  ? 'border-emerald-500 bg-emerald-500/10'
+                  : 'border-slate-700 hover:border-slate-600'
+                  }`}
+              >
+                <DbIcon className="w-6 h-6 mx-auto mb-2 text-emerald-400" />
+                <div className="font-bold text-slate-200">Database Dump</div>
+                <div className="text-xs text-slate-500 mt-1">Import all collections</div>
+              </button>
+              <button
+                onClick={() => setImportMode('mongodump')}
+                className={`p-4 rounded-lg border-2 transition-all ${importMode === 'mongodump'
+                  ? 'border-emerald-500 bg-emerald-500/10'
+                  : 'border-slate-700 hover:border-slate-600'
+                  }`}
+              >
+                <FileText className="w-6 h-6 mx-auto mb-2 text-emerald-400" />
+                <div className="font-bold text-slate-200">Mongodump</div>
+                <div className="text-xs text-slate-500 mt-1">Import mongodump JSON</div>
+              </button>
+            </div>
+          </div>
+
           {/* Target Selection */}
           <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
             <h2 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
@@ -541,10 +732,10 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
             </h2>
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Database</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Target Database</label>
                 <select
-                  value={importOptions.targetDb}
-                  onChange={(e) => setImportOptions(prev => ({ ...prev, targetDb: e.target.value }))}
+                  value={importTargetDb}
+                  onChange={(e) => setImportTargetDb(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
                 >
                   <option value="">-- Select database --</option>
@@ -553,16 +744,18 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Collection</label>
-                <input
-                  type="text"
-                  value={importOptions.targetCol}
-                  onChange={(e) => setImportOptions(prev => ({ ...prev, targetCol: e.target.value }))}
-                  placeholder="Collection name (will be created if doesn't exist)"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
-                />
-              </div>
+              {importMode === 'collection' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Target Collection</label>
+                  <input
+                    type="text"
+                    value={importOptions.targetCol}
+                    onChange={(e) => setImportOptions(prev => ({ ...prev, targetCol: e.target.value }))}
+                    placeholder="Collection name (will be created if doesn't exist)"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -634,7 +827,11 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
                 </div>
                 <div>
                   <p className="text-slate-300 font-medium">Drop your file here or click to browse</p>
-                  <p className="text-slate-500 text-sm mt-1">Supported format: JSON (array of documents)</p>
+                  <p className="text-slate-500 text-sm mt-1">
+                    {importMode === 'collection' && 'Format: JSON array of documents'}
+                    {importMode === 'database' && 'Format: Database dump { database: string, collections: [...] }'}
+                    {importMode === 'mongodump' && 'Format: Mongodump JSON (collection names as keys)'}
+                  </p>
                 </div>
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -674,7 +871,7 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
           <div className="flex gap-3">
             <button
               onClick={handleImport}
-              disabled={importing || !selectedFile || !importOptions.targetDb || !importOptions.targetCol}
+              disabled={importing || !selectedFile || !importTargetDb || (importMode === 'collection' && !importOptions.targetCol)}
               className="flex-1 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
               {importing ? (
@@ -685,7 +882,7 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
               ) : (
                 <>
                   <Download className="w-5 h-5" />
-                  Import Data
+                    Import {importMode === 'collection' ? 'Collection' : importMode === 'database' ? 'Database' : 'Mongodump'}
                 </>
               )}
             </button>
@@ -706,23 +903,27 @@ const ImportExport: React.FC<ImportExportProps> = ({ onBack }) => {
             <ul className="space-y-2 text-sm text-slate-400">
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400">•</span>
-                <span>JSON imports will insert documents into the specified collection</span>
+                <span>
+                  {importMode === 'collection' && 'Single collection import - inserts documents into the specified collection'}
+                  {importMode === 'database' && 'Database dump - imports all collections from a database backup'}
+                  {importMode === 'mongodump' && 'Mongodump - imports from mongodump JSON format'}
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400">•</span>
-                <span>If the collection doesn't exist, it will be created automatically</span>
+                <span>Collections will be created automatically if they don't exist</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400">•</span>
-                <span>For JSON files, the file should contain an array of documents</span>
+                <span>Large imports are processed in batches with live progress updates</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400">•</span>
-                <span>Large imports are processed in batches to avoid memory issues</span>
+                <span>Continue on error option allows skipping failed documents</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-emerald-400">•</span>
-                <span>Batch size can be adjusted based on your system resources</span>
+                <span>Batch size can be adjusted (default: 1000 documents per batch)</span>
               </li>
             </ul>
           </div>

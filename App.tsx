@@ -14,6 +14,7 @@ import { Icons } from './components/Icon';
 // Main App Component with Routing
 function App() {
   const [isConnected, setIsConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [databases, setDatabases] = useState<any[]>([]);
   const [savedConfig, setSavedConfig] = useState<ConnectionConfig | null>(null);
   
@@ -34,7 +35,10 @@ function App() {
         handleConnect(config);
       } catch (e) {
         console.error('Failed to parse saved connection:', e);
+        setIsLoading(false);
       }
+    } else {
+      setIsLoading(false);
     }
   }, []);
 
@@ -68,10 +72,12 @@ function App() {
     try {
       await connect(config);
       setIsConnected(true);
+      setIsLoading(false);
       // Save connection for persistent login
       localStorage.setItem('mongodeck_saved_connection', JSON.stringify(config));
     } catch (error) {
       console.error('Connection failed:', error);
+      setIsLoading(false);
       throw error;
     }
   };
@@ -83,6 +89,19 @@ function App() {
     // Clear saved connection
     localStorage.removeItem('mongodeck_saved_connection');
   };
+
+  // Show loading spinner while checking for saved connection
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-900">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="text-emerald-400 text-xl font-bold">MongoDeck</div>
+          <div className="text-slate-500 text-sm mt-2">Loading...</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isConnected) {
     return <Connection onConnect={handleConnect} />;
