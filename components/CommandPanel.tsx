@@ -152,8 +152,8 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
         const deltaY = e.clientY - startY;
 
         setPosition({
-          x: Math.max(0, startPosX + deltaX),
-          y: Math.max(0, startPosY + deltaY)
+          x: Math.max(0, startPosX - deltaX),
+          y: Math.max(0, startPosY - deltaY)
         });
       };
 
