@@ -4,8 +4,9 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import DatabaseView from './pages/DatabaseView';
 import CollectionView from './pages/CollectionView';
+import ImportExport from './pages/ImportExport';
 import CommandPanel from './components/CommandPanel';
-import { getDatabases } from './services/api';
+import { getDatabases, connect } from './services/api';
 import { ConnectionConfig } from './types';
 import { Icons } from './components/Icon';
 
@@ -14,12 +15,44 @@ function App() {
   const [currentDb, setCurrentDb] = useState<string | null>(null);
   const [currentCollection, setCurrentCollection] = useState<string | null>(null);
   const [databases, setDatabases] = useState<any[]>([]);
+  const [savedConfig, setSavedConfig] = useState<ConnectionConfig | null>(null);
+  const [currentView, setCurrentView] = useState<'dashboard' | 'import-export'>('dashboard');
   
   // Mobile Sidebar State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Command Panel State
   const [showCommandPanel, setShowCommandPanel] = useState(false);
+
+  // Check for saved connection on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('mongodeck_saved_connection');
+    if (saved) {
+      try {
+        const config: ConnectionConfig = JSON.parse(saved);
+        setSavedConfig(config);
+        // Auto-connect
+        handleConnect(config);
+      } catch (e) {
+        console.error('Failed to parse saved connection:', e);
+      }
+    }
+  }, []);
+
+  // Check for saved connection on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('mongodeck_saved_connection');
+    if (saved) {
+      try {
+        const config: ConnectionConfig = JSON.parse(saved);
+        setSavedConfig(config);
+        // Auto-connect
+        handleConnect(config);
+      } catch (e) {
+        console.error('Failed to parse saved connection:', e);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (isConnected) {
@@ -47,8 +80,16 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isConnected]);
 
-  const handleConnect = (config: ConnectionConfig) => {
-    setIsConnected(true);
+  const handleConnect = async (config: ConnectionConfig) => {
+    try {
+      await connect(config);
+      setIsConnected(true);
+      // Save connection for persistent login
+      localStorage.setItem('mongodeck_saved_connection', JSON.stringify(config));
+    } catch (error) {
+      console.error('Connection failed:', error);
+      throw error;
+    }
   };
 
   const handleLogout = () => {
@@ -56,6 +97,9 @@ function App() {
     setCurrentDb(null);
     setCurrentCollection(null);
     setDatabases([]);
+    setSavedConfig(null);
+    // Clear saved connection
+    localStorage.removeItem('mongodeck_saved_connection');
   };
 
   const navigateToDb = (name: string) => {
@@ -71,6 +115,13 @@ function App() {
   const navigateHome = () => {
       setCurrentDb(null);
       setCurrentCollection(null);
+    setCurrentView('dashboard');
+  };
+
+  const navigateToImportExport = () => {
+    setCurrentDb(null);
+    setCurrentCollection(null);
+    setCurrentView('import-export');
   };
 
   if (!isConnected) {
@@ -87,6 +138,8 @@ function App() {
         navigate={navigateHome}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        onOpenCommandPanel={() => setShowCommandPanel(true)}
+        onOpenImportExport={navigateToImportExport}
       />
       
       <main className="flex-1 overflow-auto bg-slate-900 relative flex flex-col">
@@ -98,39 +151,26 @@ function App() {
              <span className="font-bold text-lg text-slate-100">MongoDeck</span>
         </div>
 
-        {/* Command Button */}
-        {isConnected && (
-          <div className="absolute bottom-6 right-6 z-30">
-            <button
-              onClick={() => setShowCommandPanel(true)}
-              className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold p-4 rounded-full shadow-lg shadow-emerald-500/30 transition-all hover:scale-105"
-              title="Open Command Panel (Ctrl+K)"
-            >
-              <Icons.Terminal className="w-6 h-6" />
-            </button>
-          </div>
-        )}
+
 
         <div className="flex-1 overflow-auto">
-          {!currentDb && (
+          {currentView === 'import-export' ? (
+            <ImportExport onBack={navigateHome} />
+          ) : !currentDb ? (
             <Dashboard onNavigateDb={navigateToDb} />
-          )}
-          
-          {currentDb && !currentCollection && (
+            ) : currentDb && !currentCollection ? (
             <DatabaseView 
               dbName={currentDb} 
               onNavigateCollection={navigateToCollection}
               onBack={navigateHome}
             />
-          )}
-
-          {currentDb && currentCollection && (
+              ) : currentDb && currentCollection ? (
             <CollectionView 
               dbName={currentDb}
               colName={currentCollection}
               onBack={() => setCurrentCollection(null)}
             />
-          )}
+          ) : null}
         </div>
       </main>
 

@@ -22,12 +22,14 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
     'db.serverStatus()',
     'db.stats()',
     'db.listDatabases()',
-    'db.getCollectionNames()',
-    'db.collection.find().limit(10)',
-    'db.collection.aggregate([{ $group: { _id: null, count: { $sum: 1 } } }])',
-    'db.collection.createIndex({ field: 1 })',
-    'db.collection.drop()',
-    'db.runCommand({ collStats: "collection" })',
+    'db.listCollections()',
+    'db.collectionName.find().limit(10)',
+    'db.collectionName.findOne()',
+    'db.collectionName.countDocuments()',
+    'db.collectionName.aggregate([{ $group: { _id: null, count: { $sum: 1 } } }])',
+    'db.collectionName.createIndex({ field: 1 })',
+    'db.collectionName.drop()',
+    'db.runCommand({ collStats: "collectionName" })',
   ];
 
   useEffect(() => {
@@ -164,7 +166,7 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Enter MongoDB command (e.g., db.collection.find())"
+              placeholder="Enter MongoDB command (e.g., db.collectionName.find())"
               className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-sm leading-relaxed resize-none"
               rows={4}
             />

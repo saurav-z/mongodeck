@@ -74,6 +74,26 @@ const Connection: React.FC<ConnectionProps> = ({ onConnect }) => {
       if (rememberConnection) {
         const connectionName = activeTab === 'uri' ? (uriDisplayName || 'Remote URI Connection') : formData.name;
         handleSaveConnectionInternal(connectionName, config);
+        // Force immediate save to localStorage
+        try {
+          const updatedConnections = [...savedConnections];
+          const now = new Date().toISOString();
+          const connection: SavedConnection = {
+            name: connectionName,
+            config,
+            createdAt: now,
+            updatedAt: now
+          };
+          const existingIndex = updatedConnections.findIndex(conn => conn.name === connectionName);
+          if (existingIndex > -1) {
+            updatedConnections[existingIndex] = { ...connection, createdAt: updatedConnections[existingIndex].createdAt };
+          } else {
+            updatedConnections.push(connection);
+          }
+          saveEncryptedConnections(updatedConnections);
+        } catch (saveError) {
+          console.error("Failed to save connection immediately:", saveError);
+        }
       }
 
         onConnect(config);

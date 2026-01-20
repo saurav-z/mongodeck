@@ -216,17 +216,7 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({
                   <div className="p-2 bg-slate-700/50 rounded-lg text-slate-400">
                     <Icons.Table className="w-6 h-6" />
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleExportCollection(col.name);
-                    }}
-                    disabled={exporting}
-                    className="p-1.5 bg-blue-500/10 text-blue-400 rounded hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-                    title="Export collection"
-                  >
-                    <Icons.Download className="w-4 h-4" />
-                  </button>
+                  <Icons.ChevronRight className="w-5 h-5 text-slate-600" />
                 </div>
 
                 <h3 className="text-lg font-bold text-slate-200 mb-1">

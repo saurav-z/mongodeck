@@ -296,31 +296,192 @@ app.post('/api/command', withMongo, async (req, res) => {
         if (!command) return res.status(400).json({ error: 'Command is required' });
 
         const startTime = Date.now();
-
-        // Parse and execute the command
-        // This is a simplified implementation - in production, you'd want to validate/sanitize commands
         const db = req.dbClient.db();
 
-        // Try to evaluate the command as JavaScript
+        // Try to parse as JSON command object first
         let result;
         try {
-            result = await db.eval(command);
-        } catch (e) {
-            // If eval fails, try parsing as a command object
-            try {
-                const cmdObj = JSON.parse(command);
-                result = await db.command(cmdObj);
-            } catch (parseError) {
-                throw new Error(`Invalid command format: ${e.message}`);
+            const cmdObj = JSON.parse(command);
+            result = await db.command(cmdObj);
+        } catch (parseError) {
+            // If JSON parsing fails, try to execute as a simple command string
+            // Common MongoDB commands that work without eval
+            const trimmed = command.trim();
+
+            // Handle db.method() style commands (mongosh syntax)
+            if (trimmed.match(/^db\./i)) {
+                const dbMethod = trimmed.substring(3).trim(); // Remove "db."
+
+                // Handle collection methods with collection name (e.g., db.collection.find())
+                if (dbMethod.match(/^[\w]+\./)) {
+                    const match = dbMethod.match(/^([\w]+)\.([\w]+)(.*)$/i);
+                    if (match) {
+                        const colName = match[1];
+                        const method = match[2].toLowerCase();
+                        const args = match[3];
+
+                        const col = db.collection(colName);
+
+                        if (method === 'find') {
+                            // Parse filter and options from args
+                            let filter = {};
+                            let limit = 10;
+
+                            // Try to extract filter from find(...)
+                            const filterMatch = args.match(/find\(([^)]*)\)/i);
+                            if (filterMatch && filterMatch[1].trim()) {
+                                try {
+                                    filter = JSON.parse(filterMatch[1]);
+                                } catch (e) {
+                                    // If filter can't be parsed, use empty filter
+                                }
+                            }
+
+                            // Try to extract limit from .limit(...)
+                            const limitMatch = args.match(/limit\((\d+)\)/i);
+                            if (limitMatch) {
+                                limit = parseInt(limitMatch[1]);
+                            }
+
+                            result = await col.find(filter).limit(limit).toArray();
+                        } else if (method === 'findone') {
+                            let filter = {};
+                            const filterMatch = args.match(/findOne\(([^)]*)\)/i);
+                            if (filterMatch && filterMatch[1].trim()) {
+                                try {
+                                    filter = JSON.parse(filterMatch[1]);
+                                } catch (e) { }
+                            }
+                            result = await col.findOne(filter);
+                        } else if (method === 'countdocuments') {
+                            let filter = {};
+                            const filterMatch = args.match(/countDocuments\(([^)]*)\)/i);
+                            if (filterMatch && filterMatch[1].trim()) {
+                                try {
+                                    filter = JSON.parse(filterMatch[1]);
+                                } catch (e) { }
+                            }
+                            result = await col.countDocuments(filter);
+                        } else if (method === 'aggregate') {
+                            let pipeline = [];
+                            const pipelineMatch = args.match(/aggregate\(([^)]*)\)/i);
+                            if (pipelineMatch && pipelineMatch[1].trim()) {
+                                try {
+                                    pipeline = JSON.parse(pipelineMatch[1]);
+                                } catch (e) { }
+                            }
+                            result = await col.aggregate(pipeline).toArray();
+                        } else if (method === 'createindex') {
+                            let indexSpec = {};
+                            const indexMatch = args.match(/createIndex\(([^)]*)\)/i);
+                            if (indexMatch && indexMatch[1].trim()) {
+                                try {
+                                    indexSpec = JSON.parse(indexMatch[1]);
+                                } catch (e) { }
+                            }
+                            result = await col.createIndex(indexSpec);
+                        } else if (method === 'drop') {
+                            result = await col.drop();
+                        } else {
+                            throw new Error(`Unsupported collection method: ${method}. Try: find(), findOne(), countDocuments(), aggregate(), createIndex(), drop()`);
+                        }
+                    } else {
+                        throw new Error(`Invalid collection method syntax. Use: db.collectionName.method()`);
+                    }
+                } else if (dbMethod.match(/^adminCommand\(/i)) {
+                    const match = dbMethod.match(/adminCommand\(([^)]*)\)/i);
+                    if (match) {
+                        try {
+                            const cmdObj = JSON.parse(match[1]);
+                            const adminDb = req.dbClient.db().admin();
+                            result = await adminDb.command(cmdObj);
+                        } catch (e) {
+                            throw new Error('Invalid adminCommand syntax. Use: db.adminCommand({ command: "value" })');
+                        }
+                    } else {
+                        throw new Error('Invalid adminCommand syntax. Use: db.adminCommand({ command: "value" })');
+                    }
+                } else if (dbMethod.match(/^runCommand\(/i)) {
+                    const match = dbMethod.match(/runCommand\(([^)]*)\)/i);
+                    if (match) {
+                        try {
+                            const cmdObj = JSON.parse(match[1]);
+                            result = await db.command(cmdObj);
+                        } catch (e) {
+                            throw new Error('Invalid runCommand syntax. Use: db.runCommand({ command: "value" })');
+                        }
+                    } else {
+                        throw new Error('Invalid runCommand syntax. Use: db.runCommand({ command: "value" })');
+                    }
+                } else if (dbMethod.match(/^listDatabases\(\)/i)) {
+                    const adminDb = req.dbClient.db().admin();
+                    result = await adminDb.listDatabases();
+                } else if (dbMethod.match(/^listCollections\(\)/i)) {
+                    result = await db.listCollections().toArray();
+                } else if (dbMethod.match(/^stats\(\)/i)) {
+                    result = await db.stats();
+                } else if (dbMethod.match(/^serverStatus\(\)/i)) {
+                    const adminDb = req.dbClient.db().admin();
+                    result = await adminDb.serverStatus();
+                } else if (dbMethod.match(/^dropDatabase\(\)/i)) {
+                    result = await db.dropDatabase();
+                } else if (dbMethod.match(/^createCollection\(/i)) {
+                    const match = dbMethod.match(/createCollection\(['"](\w+)['"]\)/i);
+                    if (match) {
+                        result = await db.createCollection(match[1]);
+                    } else {
+                        throw new Error('Invalid createCollection syntax. Use: db.createCollection("name")');
+                    }
+                } else if (dbMethod.match(/^dropCollection\(/i)) {
+                    const match = dbMethod.match(/dropCollection\(['"](\w+)['"]\)/i);
+                    if (match) {
+                        result = await db.collection(match[1]).drop();
+                    } else {
+                        throw new Error('Invalid dropCollection syntax. Use: db.dropCollection("name")');
+                    }
+                } else {
+                    throw new Error(`Unsupported db method: ${dbMethod}. Try: db.listDatabases(), db.listCollections(), db.stats(), db.serverStatus(), db.dropDatabase(), db.createCollection("name"), db.dropCollection("name"), db.collectionName.find(), db.collectionName.findOne(), db.collectionName.countDocuments(), db.collectionName.aggregate(), db.collectionName.createIndex(), db.collectionName.drop()`);
+                }
+            } else {
+                // Handle simple commands without db. prefix
+                const lowerTrimmed = trimmed.toLowerCase();
+
+                if (lowerTrimmed === 'stats' || lowerTrimmed === 'dbstats') {
+                    result = await db.stats();
+                } else if (lowerTrimmed === 'serverstatus') {
+                    const adminDb = req.dbClient.db().admin();
+                    result = await adminDb.serverStatus();
+                } else if (lowerTrimmed.startsWith('listdatabases')) {
+                    const adminDb = req.dbClient.db().admin();
+                    result = await adminDb.listDatabases();
+                } else if (lowerTrimmed.startsWith('listcollections')) {
+                    result = await db.listCollections().toArray();
+                } else if (lowerTrimmed.startsWith('dropdatabase')) {
+                    result = await db.dropDatabase();
+                } else if (lowerTrimmed.startsWith('createcollection')) {
+                    const match = lowerTrimmed.match(/createcollection\s+(\w+)/);
+                    if (match) {
+                        result = await db.createCollection(match[1]);
+                    } else {
+                        throw new Error('Invalid createCollection syntax. Use: createCollection <name>');
+                    }
+                } else if (lowerTrimmed.startsWith('dropcollection')) {
+                    const match = lowerTrimmed.match(/dropcollection\s+(\w+)/);
+                    if (match) {
+                        result = await db.collection(match[1]).drop();
+                    } else {
+                        throw new Error('Invalid dropCollection syntax. Use: dropCollection <name>');
+                    }
+                } else {
+                    throw new Error(`Unsupported command: ${command}. Try using mongosh syntax: db.collectionName.find(), db.listDatabases(), db.stats(), etc.`);
+                }
             }
         }
 
-        const executionTime = Date.now() - startTime;
-
         res.json({
             success: true,
-            data: result,
-            executionTime
+            result: result,
+            executionTime: Date.now() - startTime
         });
     } catch (e) {
         res.status(500).json({

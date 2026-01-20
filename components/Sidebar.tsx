@@ -11,9 +11,11 @@ interface SidebarProps {
   navigate: (path: string) => void;
   isOpen: boolean;
   onClose: () => void;
+  onOpenCommandPanel: () => void;
+  onOpenImportExport: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ databases, currentDb, onSelectDb, onLogout, navigate, isOpen, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ databases, currentDb, onSelectDb, onLogout, navigate, isOpen, onClose, onOpenCommandPanel, onOpenImportExport }) => {
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
   const [showSavedConnections, setShowSavedConnections] = useState(false);
 
@@ -78,6 +80,20 @@ const Sidebar: React.FC<SidebarProps> = ({ databases, currentDb, onSelectDb, onL
           >
             <Icons.Dashboard className="w-4 h-4" />
             <span>Dashboard</span>
+          </button>
+          <button
+            onClick={() => { onOpenCommandPanel(); onClose(); }}
+            className="w-full px-4 py-2 text-left text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50 flex items-center gap-3 transition-colors"
+          >
+            <Icons.Terminal className="w-4 h-4" />
+            <span>Console (Ctrl+K)</span>
+          </button>
+          <button
+            onClick={() => { navigate('/import-export'); onClose(); }}
+            className="w-full px-4 py-2 text-left text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50 flex items-center gap-3 transition-colors"
+          >
+            <Icons.Download className="w-4 h-4" />
+            <span>Import/Export</span>
           </button>
 
           <div className="px-4 mt-6 mb-2 flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">

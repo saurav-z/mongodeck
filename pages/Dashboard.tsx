@@ -166,32 +166,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateDb }) => {
         <div className="lg:col-span-2 bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
           <div className="p-6 border-b border-slate-700 flex justify-between items-center">
             <h2 className="text-lg font-semibold text-slate-100">Databases</h2>
-            <div className="flex gap-2">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={exporting}
-                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
-              >
-                <Icons.Upload className="w-4 h-4" />
-                Import
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,.bson"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    // For simplicity, import to first database
-                    if (dbs.length > 0) {
-                      await handleImportCollection(dbs[0].name, 'imported', file);
-                    }
-                    e.target.value = '';
-                  }
-                }}
-                style={{ display: 'none' }}
-              />
-            </div>
           </div>
           <div className="divide-y divide-slate-700">
             {dbs.map(db => (
@@ -207,19 +181,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateDb }) => {
                     <p className="text-xs text-slate-500">{db.collections.length} collections</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openExportModal(db.name);
-                    }}
-                    className="p-1.5 bg-blue-500/10 text-blue-400 rounded hover:bg-blue-500/20 transition-colors"
-                    title="Export database"
-                  >
-                    <Icons.Download className="w-4 h-4" />
-                  </button>
-                  <Icons.ChevronRight className="w-5 h-5 text-slate-600" />
-                </div>
+                <Icons.ChevronRight className="w-5 h-5 text-slate-600" />
               </div>
             ))}
           </div>
