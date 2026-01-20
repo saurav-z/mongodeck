@@ -86,7 +86,7 @@ const Sidebar: React.FC<SidebarProps> = ({ databases, currentDb, onSelectDb, onL
             className="w-full px-4 py-2 text-left text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50 flex items-center gap-3 transition-colors"
           >
             <Icons.Terminal className="w-4 h-4" />
-            <span>Console (Ctrl+K)</span>
+            <span>Console (Ctrl+`)</span>
           </button>
           <button
             onClick={() => { onOpenImportExport(); onClose(); }}

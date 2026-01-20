@@ -15,7 +15,13 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [mode, setMode] = useState<'small' | 'big'>('small');
+  const [isDragging, setIsDragging] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [size, setSize] = useState({ width: 400, height: 300 });
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<HTMLDivElement>(null);
 
   const commonCommands = [
     'db.adminCommand({ ping: 1 })',
@@ -37,6 +43,14 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
       inputRef.current.focus();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (mode === 'big') {
+      setSize({ width: 600, height: 500 });
+    } else {
+      setSize({ width: 400, height: 300 });
+    }
+  }, [mode]);
 
   const handleExecute = async () => {
     if (!command.trim()) return;
@@ -120,24 +134,81 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
     return result.error || 'No data returned';
   };
 
+  // Drag handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.target === dragRef.current || e.target === panelRef.current) {
+      setIsDragging(true);
+      const startX = e.clientX - position.x;
+      const startY = e.clientY - position.y;
+
+      const handleMouseMove = (e: MouseEvent) => {
+        setPosition({
+          x: Math.max(0, e.clientX - startX),
+          y: Math.max(0, e.clientY - startY)
+        });
+      };
+
+      const handleMouseUp = () => {
+        setIsDragging(false);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+  };
+
+  const toggleMode = () => {
+    setMode(prev => prev === 'small' ? 'big' : 'small');
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-800 w-full max-w-4xl rounded-xl border border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-700 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Icons.Terminal className="w-5 h-5 text-emerald-400" />
-            <h3 className="text-lg font-bold text-slate-100">MongoDB Command Runner</h3>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white">
-            <Icons.Close className="w-5 h-5" />
+    <div
+      ref={panelRef}
+      className={`fixed z-50 bg-slate-800 border border-slate-700 shadow-2xl rounded-xl overflow-hidden transition-all duration-200 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+      style={{
+        right: position.x || 20,
+        bottom: position.y || 20,
+        width: size.width,
+        height: size.height,
+        maxWidth: '90vw',
+        maxHeight: '90vh'
+      }}
+      onMouseDown={handleMouseDown}
+    >
+      {/* Header - Draggable area */}
+      <div
+        ref={dragRef}
+        className="p-3 border-b border-slate-700 flex justify-between items-center bg-slate-900/50"
+      >
+        <div className="flex items-center gap-2">
+          <Icons.Terminal className="w-4 h-4 text-emerald-400" />
+          <span className="text-sm font-bold text-slate-100">MongoDB Console</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleMode}
+            className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+            title={mode === 'small' ? 'Expand to big mode' : 'Collapse to small mode'}
+          >
+            {mode === 'small' ? 'Big' : 'Small'}
+          </button>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-white p-1 hover:bg-slate-700 rounded"
+          >
+            <Icons.Close className="w-4 h-4" />
           </button>
         </div>
+      </div>
 
+      {/* Content */}
+      <div className="flex flex-col h-full overflow-hidden">
         {/* Command Input */}
-        <div className="p-4 border-b border-slate-700 bg-slate-900/50">
+        <div className="p-3 border-b border-slate-700 bg-slate-900/30">
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
               Command
@@ -167,24 +238,24 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
               onChange={(e) => setCommand(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Enter MongoDB command (e.g., db.collectionName.find())"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-sm leading-relaxed resize-none"
-              rows={4}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-xs leading-relaxed resize-none"
+              rows={mode === 'big' ? 6 : 3}
             />
-            <div className="absolute bottom-2 right-2 text-xs text-slate-500">
-              Press Enter to execute, Tab for auto-complete
+            <div className="absolute bottom-1 right-2 text-[10px] text-slate-500">
+              Enter to execute, Tab for auto-complete
             </div>
           </div>
 
           {/* Suggestions */}
           {showSuggestions && (
-            <div className="mt-3 bg-slate-950 border border-slate-700 rounded-lg p-2 max-h-40 overflow-y-auto">
-              <p className="text-xs text-slate-500 mb-2">Common commands:</p>
+            <div className="mt-2 bg-slate-950 border border-slate-700 rounded-lg p-2 max-h-32 overflow-y-auto">
+              <p className="text-[10px] text-slate-500 mb-1">Common commands:</p>
               <div className="flex flex-wrap gap-1">
                 {commonCommands.map((cmd, idx) => (
                   <button
                     key={idx}
                     onClick={() => insertCommand(cmd)}
-                    className="text-xs px-2 py-1 bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 rounded transition-colors"
+                    className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 rounded transition-colors"
                   >
                     {cmd}
                   </button>
@@ -197,45 +268,45 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
           <button
             onClick={handleExecute}
             disabled={loading || !command.trim()}
-            className="w-full mt-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full mt-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-1.5 rounded-lg transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <>
-                <Icons.Refresh className="w-4 h-4 animate-spin" />
+                <Icons.Refresh className="w-3 h-3 animate-spin" />
                 Executing...
               </>
             ) : (
               <>
-                <Icons.Play className="w-4 h-4 fill-current" />
-                Execute Command
+                  <Icons.Play className="w-3 h-3 fill-current" />
+                  Execute
               </>
             )}
           </button>
         </div>
 
         {/* Result */}
-        <div className="flex-1 p-4 overflow-hidden flex flex-col">
+        <div className="flex-1 p-3 overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
               Result
             </label>
             {result?.executionTime && (
-              <span className="text-xs text-slate-400">
-                Executed in {result.executionTime}ms
+              <span className="text-[10px] text-slate-400">
+                {result.executionTime}ms
               </span>
             )}
           </div>
           
-          <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-3 overflow-auto">
+          <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-2 overflow-auto">
             {result ? (
-              <pre className="text-sm font-mono whitespace-pre-wrap break-all">
+              <pre className="text-[11px] font-mono whitespace-pre-wrap break-all">
                 <span className={result.success ? 'text-emerald-400' : 'text-red-400'}>
                   {formatResult()}
                 </span>
               </pre>
             ) : (
-              <div className="text-slate-500 text-sm italic">
-                Execute a command to see results here...
+                <div className="text-slate-500 text-[11px] italic">
+                  Execute a command to see results...
               </div>
             )}
           </div>
@@ -243,14 +314,14 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
 
         {/* History */}
         {history.length > 0 && (
-          <div className="p-4 border-t border-slate-700 bg-slate-900/50">
-            <p className="text-xs text-slate-500 mb-2">Recent commands:</p>
-            <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
-              {history.slice(0, 10).map((cmd, idx) => (
+          <div className="p-2 border-t border-slate-700 bg-slate-900/30 max-h-20 overflow-y-auto">
+            <p className="text-[10px] text-slate-500 mb-1">Recent:</p>
+            <div className="flex flex-wrap gap-1">
+              {history.slice(0, 5).map((cmd, idx) => (
                 <button
                   key={idx}
                   onClick={() => setCommand(cmd)}
-                  className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded transition-colors truncate max-w-[200px]"
+                  className="text-[10px] px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded transition-colors truncate max-w-[150px]"
                 >
                   {cmd}
                 </button>

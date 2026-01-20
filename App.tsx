@@ -56,7 +56,7 @@ function App() {
   // Keyboard shortcut for command panel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
         e.preventDefault();
         if (isConnected) {
           setShowCommandPanel(prev => !prev);
