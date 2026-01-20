@@ -141,6 +141,8 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
   // Drag handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.target === dragRef.current || e.target === panelRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
       setIsDragging(true);
       const startX = e.clientX;
       const startY = e.clientY;
@@ -191,7 +193,7 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
       {/* Header - Draggable area */}
       <div
         ref={dragRef}
-        className="p-3 border-b border-slate-700 flex justify-between items-center bg-slate-900/50"
+        className="p-3 border-b border-slate-700 flex justify-between items-center bg-slate-900/50 cursor-grab active:cursor-grabbing select-none"
       >
         <div className="flex items-center gap-2">
           <Icons.Terminal className="w-4 h-4 text-emerald-400" />
