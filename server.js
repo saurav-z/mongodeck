@@ -574,12 +574,12 @@ app.post('/api/export/collection', withMongo, async (req, res) => {
     }
 });
 
-// Import collection from file
+// Import collection from file or JSON data
 app.post('/api/import/collection/:dbName/:colName', upload.single('file'), withMongo, async (req, res) => {
     try {
         const { dbName, colName } = req.params;
 
-        // Get the file from the request
+        // Get the file or data from the request
         if (!req.file && !req.body.data) {
             return res.status(400).json({ error: 'No file or data provided' });
         }

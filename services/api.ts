@@ -178,14 +178,28 @@ export const exportCollection = async (config: CollectionExportConfig): Promise<
     return res.blob();
 };
 
-export const importCollection = async (dbName: string, colName: string, file: File): Promise<void> => {
-    const formData = new FormData();
-    formData.append('file', file);
+export const importCollection = async (dbName: string, colName: string, data: File | any[]): Promise<void> => {
+    let body: FormData | string;
+    let headers: Record<string, string>;
+
+    if (data instanceof File) {
+        // File upload
+        const formData = new FormData();
+        formData.append('file', data);
+        body = formData;
+        headers = getHeaders();
+        // Remove Content-Type for FormData (browser sets it with boundary)
+        delete headers['Content-Type'];
+    } else {
+        // JSON data (for batch imports)
+        body = JSON.stringify({ data });
+        headers = getHeaders();
+    }
 
     const res = await fetch(`${API_URL}/import/collection/${dbName}/${colName}`, {
         method: 'POST',
-        headers: getHeaders(),
-        body: formData
+        headers,
+        body
     });
     if (!res.ok) throw new Error(await res.text());
 };

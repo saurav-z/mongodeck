@@ -89,7 +89,7 @@ const Sidebar: React.FC<SidebarProps> = ({ databases, currentDb, onSelectDb, onL
             <span>Console (Ctrl+K)</span>
           </button>
           <button
-            onClick={() => { navigate('/import-export'); onClose(); }}
+            onClick={() => { onOpenImportExport(); onClose(); }}
             className="w-full px-4 py-2 text-left text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50 flex items-center gap-3 transition-colors"
           >
             <Icons.Download className="w-4 h-4" />

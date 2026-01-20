@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
 import Connection from './pages/Connection';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -10,34 +11,17 @@ import { getDatabases, connect } from './services/api';
 import { ConnectionConfig } from './types';
 import { Icons } from './components/Icon';
 
+// Main App Component with Routing
 function App() {
   const [isConnected, setIsConnected] = useState(false);
-  const [currentDb, setCurrentDb] = useState<string | null>(null);
-  const [currentCollection, setCurrentCollection] = useState<string | null>(null);
   const [databases, setDatabases] = useState<any[]>([]);
   const [savedConfig, setSavedConfig] = useState<ConnectionConfig | null>(null);
-  const [currentView, setCurrentView] = useState<'dashboard' | 'import-export'>('dashboard');
   
   // Mobile Sidebar State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Command Panel State
   const [showCommandPanel, setShowCommandPanel] = useState(false);
-
-  // Check for saved connection on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('mongodeck_saved_connection');
-    if (saved) {
-      try {
-        const config: ConnectionConfig = JSON.parse(saved);
-        setSavedConfig(config);
-        // Auto-connect
-        handleConnect(config);
-      } catch (e) {
-        console.error('Failed to parse saved connection:', e);
-      }
-    }
-  }, []);
 
   // Check for saved connection on mount
   useEffect(() => {
@@ -94,34 +78,10 @@ function App() {
 
   const handleLogout = () => {
     setIsConnected(false);
-    setCurrentDb(null);
-    setCurrentCollection(null);
     setDatabases([]);
     setSavedConfig(null);
     // Clear saved connection
     localStorage.removeItem('mongodeck_saved_connection');
-  };
-
-  const navigateToDb = (name: string) => {
-    setCurrentDb(name);
-    setCurrentCollection(null);
-  };
-
-  const navigateToCollection = (db: string, col: string) => {
-    setCurrentDb(db);
-    setCurrentCollection(col);
-  };
-
-  const navigateHome = () => {
-      setCurrentDb(null);
-      setCurrentCollection(null);
-    setCurrentView('dashboard');
-  };
-
-  const navigateToImportExport = () => {
-    setCurrentDb(null);
-    setCurrentCollection(null);
-    setCurrentView('import-export');
   };
 
   if (!isConnected) {
@@ -129,57 +89,138 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-200 font-sans overflow-hidden">
-      <Sidebar 
-        databases={databases}
-        currentDb={currentDb}
-        onSelectDb={navigateToDb}
-        onLogout={handleLogout}
-        navigate={navigateHome}
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        onOpenCommandPanel={() => setShowCommandPanel(true)}
-        onOpenImportExport={navigateToImportExport}
-      />
-      
-      <main className="flex-1 overflow-auto bg-slate-900 relative flex flex-col">
-        {/* Mobile Header */}
-        <div className="md:hidden flex items-center p-4 bg-slate-900 border-b border-slate-800 sticky top-0 z-20">
-             <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 mr-2 text-slate-400">
-                <Icons.List className="w-6 h-6" />
-             </button>
-             <span className="font-bold text-lg text-slate-100">MongoDeck</span>
-        </div>
+    <Router>
+      <div className="flex h-screen bg-slate-900 text-slate-200 font-sans overflow-hidden">
+        <SidebarWithRouting
+          databases={databases}
+          onLogout={handleLogout}
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          onOpenCommandPanel={() => setShowCommandPanel(true)}
+        />
 
+        <main className="flex-1 overflow-auto bg-slate-900 relative flex flex-col">
+          {/* Mobile Header */}
+          <div className="md:hidden flex items-center p-4 bg-slate-900 border-b border-slate-800 sticky top-0 z-20">
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 mr-2 text-slate-400">
+              <Icons.List className="w-6 h-6" />
+            </button>
+            <span className="font-bold text-lg text-slate-100">MongoDeck</span>
+          </div>
 
+          <div className="flex-1 overflow-auto">
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/import-export" element={<ImportExportPage />} />
+              <Route path="/db/:dbName" element={<DatabasePage />} />
+              <Route path="/db/:dbName/:colName" element={<CollectionPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
+        </main>
 
-        <div className="flex-1 overflow-auto">
-          {currentView === 'import-export' ? (
-            <ImportExport onBack={navigateHome} />
-          ) : !currentDb ? (
-            <Dashboard onNavigateDb={navigateToDb} />
-            ) : currentDb && !currentCollection ? (
-            <DatabaseView 
-              dbName={currentDb} 
-              onNavigateCollection={navigateToCollection}
-              onBack={navigateHome}
-            />
-              ) : currentDb && currentCollection ? (
-            <CollectionView 
-              dbName={currentDb}
-              colName={currentCollection}
-              onBack={() => setCurrentCollection(null)}
-            />
-          ) : null}
-        </div>
-      </main>
-
-      <CommandPanel
-        isOpen={showCommandPanel}
-        onClose={() => setShowCommandPanel(false)}
-      />
-    </div>
+        <CommandPanel
+          isOpen={showCommandPanel}
+          onClose={() => setShowCommandPanel(false)}
+        />
+      </div>
+    </Router>
   );
 }
+
+// Sidebar Component with Routing
+interface SidebarWithRoutingProps {
+  databases: any[];
+  onLogout: () => void;
+  isOpen: boolean;
+  onClose: () => void;
+  onOpenCommandPanel: () => void;
+}
+
+const SidebarWithRouting: React.FC<SidebarWithRoutingProps> = ({ databases, onLogout, isOpen, onClose, onOpenCommandPanel }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const getCurrentDb = () => {
+    const match = location.pathname.match(/^\/db\/([^\/]+)/);
+    return match ? match[1] : null;
+  };
+
+  const currentDb = getCurrentDb();
+
+  const handleNavigateHome = () => {
+    navigate('/');
+    onClose();
+  };
+
+  const handleNavigateImportExport = () => {
+    navigate('/import-export');
+    onClose();
+  };
+
+  const handleSelectDb = (dbName: string) => {
+    navigate(`/db/${dbName}`);
+    onClose();
+  };
+
+  return (
+    <Sidebar
+      databases={databases}
+      currentDb={currentDb}
+      onSelectDb={handleSelectDb}
+      onLogout={onLogout}
+      navigate={handleNavigateHome}
+      isOpen={isOpen}
+      onClose={onClose}
+      onOpenCommandPanel={onOpenCommandPanel}
+      onOpenImportExport={handleNavigateImportExport}
+    />
+  );
+};
+
+// Page Components
+const DashboardPage: React.FC = () => {
+  const navigate = useNavigate();
+  return <Dashboard onNavigateDb={(dbName) => navigate(`/db/${dbName}`)} />;
+};
+
+const ImportExportPage: React.FC = () => {
+  const navigate = useNavigate();
+  return <ImportExport onBack={() => navigate('/')} />;
+};
+
+const DatabasePage: React.FC = () => {
+  const navigate = useNavigate();
+  const { dbName } = useParams<{ dbName: string }>();
+
+  if (!dbName) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <DatabaseView
+      dbName={dbName}
+      onNavigateCollection={(db, col) => navigate(`/db/${db}/${col}`)}
+      onBack={() => navigate('/')}
+    />
+  );
+};
+
+const CollectionPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { dbName, colName } = useParams<{ dbName: string; colName: string }>();
+
+  if (!dbName || !colName) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <CollectionView
+      dbName={dbName}
+      colName={colName}
+      onBack={() => navigate(`/db/${dbName}`)}
+    />
+  );
+};
 
 export default App;
