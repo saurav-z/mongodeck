@@ -58,6 +58,7 @@ export interface EncryptionKey {
 
 export interface CommandResult {
   success: boolean;
+  result?: any;
   data?: any;
   error?: string;
   executionTime?: number;

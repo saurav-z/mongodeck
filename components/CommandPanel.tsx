@@ -127,6 +127,10 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
   const formatResult = () => {
     if (!result) return null;
     
+    if (result.success && result.result) {
+      return JSON.stringify(result.result, null, 2);
+    }
+
     if (result.success && result.data) {
       return JSON.stringify(result.data, null, 2);
     }
@@ -138,13 +142,18 @@ const CommandPanel: React.FC<CommandPanelProps> = ({ isOpen, onClose }) => {
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.target === dragRef.current || e.target === panelRef.current) {
       setIsDragging(true);
-      const startX = e.clientX - position.x;
-      const startY = e.clientY - position.y;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startPosX = position.x;
+      const startPosY = position.y;
 
       const handleMouseMove = (e: MouseEvent) => {
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+
         setPosition({
-          x: Math.max(0, e.clientX - startX),
-          y: Math.max(0, e.clientY - startY)
+          x: Math.max(0, startPosX + deltaX),
+          y: Math.max(0, startPosY + deltaY)
         });
       };
 
